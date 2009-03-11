@@ -1,33 +1,148 @@
 package KiokuDB::Backend::Memcachedb;
+use Moose;
 
-use strict;
-use warnings;
-our $VERSION = '0.01';
+use Data::Stream::Bulk::Util qw(bulk);
 
-1;
+use Cache::Memcached;
+use namespace::clean -except => 'meta';
+
+use Carp;
+
+our $VERSION = "0.01";
+
+with qw(
+    KiokuDB::Backend
+    KiokuDB::Backend::Serialize::Delegate
+    KiokuDB::Backend::Role::UnicodeSafe
+    KiokuDB::Backend::Role::TXN::Memory
+    KiokuDB::Backend::Role::Concurrency::POSIX
+);
+
+has create => (
+    isa => "Bool",
+    is  => "ro",
+    default => 0,
+);
+
+sub BUILD {
+    my $self = shift;
+}
+
+has db => (
+    isa => "Cache::Memcached",
+    is  => "ro",
+    handles => [qw(document)],
+);
+
+sub new_from_dsn_params {
+    my ( $self, %args ) = @_;
+
+    my $servers = delete $args{ servers };
+    my @servers = split /,/, $servers;
+    my $db      = Cache::Memcached->new( { 'servers' => \@servers } );
+    $self->new( %args, db => $db );
+}
+
+sub insert {
+    my ( $self, @entries ) = @_;
+    my $db = $self->db;
+    foreach my $entry ( @entries ) {
+        $db->set( $entry->id, $self->serialize( $entry ) );
+    }
+}
+
+sub get {
+    my ( $self, @ids ) = @_;
+
+    my $db = $self->db;
+
+    my @objs = map { $self->deserialize( $db->get( $_ ) ) } @ids;
+    scalar @objs == 1 ? return shift @objs : @objs;
+}
+
+sub commit_entries {
+    my ( $self, @entries ) = @_;
+    my $db = $self->db;
+    my @checks = $self->exists( map { $_->id } @entries );
+
+    foreach my $entry ( @entries ) {
+        my $id = $entry->id;
+
+        my $status = shift @checks;
+        if ( $entry->deleted ) {
+            if ( !$status ) {
+                croak "Entry $id doesn't exist in the database";
+            }
+            $db->delete( $id );
+        } else {
+            if ( $status and not $entry->has_prev ) {
+                croak "Entry $id already exists in the database";
+            }
+            $db->set( $id, $self->serialize( $entry ) );
+        }
+    }
+}
+
+sub exists {
+    my ( $self, @ids ) = @_;
+    my $check = $self->db->get_multi( @ids );
+    map { exists $check->{ $_ } ? 1 : 0 } @ids;
+}
+
+sub delete {
+    my ($self, @ids_or_entries) = @_;
+    my @ids = map { ref($_) ? $_->id : $_ } @ids_or_entries;
+    $self->db->delete($_) foreach (@ids);
+}
+
+__PACKAGE__->meta->make_immutable;
+
+__PACKAGE__
+
 __END__
+
+=pod
 
 =head1 NAME
 
-KiokuDB::Backend::Memcachedb -
+KiokuDB::Backend::Memcachedb - Memcachedb backend for L<KiokuDB>
 
 =head1 SYNOPSIS
 
-  use KiokuDB::Backend::Memcachedb;
+    KiokuDB->connect( 
+        "memcachedb:servers=127.0.0.1:112200,127.0.0.1:112222" 
+    );
 
 =head1 DESCRIPTION
 
-KiokuDB::Backend::Memcachedb is
+This backend provides L<KiokuDB> support for Memcachedb using
+L<Cache::Memcached>
+
+=head1 ATTRIBUTES
+
+=over 4
+
+=item db
+
+An L<Cache::Memcachedb> instance.
+
+Required.
+
+=back
+
+=head1 VERSION CONTROL
+
+L<http://github.com/franckcuny/kiokudb-backend-memcachedb>
 
 =head1 AUTHOR
 
-franck cuny E<lt>franck.cuny@rtgi.frE<gt>
+Nils Grunwald E<lt>nils.grunwald@rtgi.frE<gt>
+Franck Cuny E<lt>franck.cuny@rtgi.frE<gt>
 
-=head1 SEE ALSO
+=head1 COPYRIGHT
 
-=head1 LICENSE
-
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself.
+    Copyright (c) 2009, nils grunwald, franck cuny, RTGI. All
+    rights reserved This program is free software; you can redistribute
+    it and/or modify it under the same terms as Perl itself.
 
 =cut
