@@ -13,7 +13,6 @@ our $VERSION = "0.01";
 with qw(
     KiokuDB::Backend
     KiokuDB::Backend::Serialize::Delegate
-    KiokuDB::Backend::Role::UnicodeSafe
     KiokuDB::Backend::Role::TXN::Memory
     KiokuDB::Backend::Role::Concurrency::POSIX
 );
@@ -57,7 +56,7 @@ sub get {
     my $db = $self->db;
 
     my @objs = map { $self->deserialize( $db->get( $_ ) ) } @ids;
-    scalar @objs == 1 ? return shift @objs : @objs;
+    @jobs;
 }
 
 sub commit_entries {
