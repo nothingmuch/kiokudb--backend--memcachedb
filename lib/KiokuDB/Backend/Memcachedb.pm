@@ -56,7 +56,7 @@ sub get {
     my $db = $self->db;
 
     my @objs = map { $self->deserialize( $db->get( $_ ) ) } @ids;
-    @jobs;
+    @objs;
 }
 
 sub commit_entries {
