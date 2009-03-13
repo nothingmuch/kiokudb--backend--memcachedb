@@ -5,8 +5,18 @@ use Test::More;
 use Scope::Guard;
 
 BEGIN {
-    #plan skip_all => 'Please set KIOKU_COUCHDB_URI to a CouchDB instance URI' unless $ENV{KIOKU_COUCHDB_URI};
-    plan 'no_plan';
+    use IO::Socket::INET;
+    my $addr = shift || "127.0.0.1:21201";
+    my $msock = IO::Socket::INET->new(
+        PeerAddr => $addr,
+        Timeout  => 3
+    );
+    if ( $msock ) {
+        plan 'no_plan';
+    } else {
+        plan skip_all => "No memcachedb instance running\n";
+        exit 0;
+    }
 }
 
 use ok 'KiokuDB';

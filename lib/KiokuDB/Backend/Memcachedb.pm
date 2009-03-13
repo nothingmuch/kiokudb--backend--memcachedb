@@ -13,7 +13,6 @@ our $VERSION = "0.01";
 with qw(
     KiokuDB::Backend
     KiokuDB::Backend::Serialize::Delegate
-    KiokuDB::Backend::Role::TXN::Memory
     KiokuDB::Backend::Role::Concurrency::POSIX
 );
 
@@ -57,29 +56,6 @@ sub get {
 
     my @objs = map { $self->deserialize( $db->get( $_ ) ) } @ids;
     @objs;
-}
-
-sub commit_entries {
-    my ( $self, @entries ) = @_;
-    my $db = $self->db;
-    my @checks = $self->exists( map { $_->id } @entries );
-
-    foreach my $entry ( @entries ) {
-        my $id = $entry->id;
-
-        my $status = shift @checks;
-        if ( $entry->deleted ) {
-            if ( !$status ) {
-                croak "Entry $id doesn't exist in the database";
-            }
-            $db->delete( $id );
-        } else {
-            if ( $status and not $entry->has_prev ) {
-                croak "Entry $id already exists in the database";
-            }
-            $db->set( $id, $self->serialize( $entry ) );
-        }
-    }
 }
 
 sub exists {
