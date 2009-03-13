@@ -13,7 +13,6 @@ our $VERSION = "0.01";
 with qw(
     KiokuDB::Backend
     KiokuDB::Backend::Serialize::Delegate
-	KiokuDB::Backend::Role::Clear
 );
 
 sub BUILD {
@@ -78,10 +77,6 @@ sub delete {
     my ($self, @ids_or_entries) = @_;
     my @ids = map { ref($_) ? $_->id : $_ } @ids_or_entries;
     $self->db->delete($_) foreach (@ids);
-}
-
-sub clear {
-	shift->db->flush_all;
 }
 
 __PACKAGE__->meta->make_immutable;
