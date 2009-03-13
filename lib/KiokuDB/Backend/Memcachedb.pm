@@ -13,14 +13,7 @@ our $VERSION = "0.01";
 with qw(
     KiokuDB::Backend
     KiokuDB::Backend::Serialize::Delegate
-    KiokuDB::Backend::Role::TXN::Memory
-    KiokuDB::Backend::Role::Concurrency::POSIX
-);
-
-has create => (
-    isa => "Bool",
-    is  => "ro",
-    default => 0,
+	KiokuDB::Backend::Role::Clear
 );
 
 sub BUILD {
@@ -42,42 +35,35 @@ sub new_from_dsn_params {
     $self->new( %args, db => $db );
 }
 
-sub insert {
-    my ( $self, @entries ) = @_;
-    my $db = $self->db;
-    foreach my $entry ( @entries ) {
-        $db->set( $entry->id, $self->serialize( $entry ) );
-    }
-}
-
 sub get {
     my ( $self, @ids ) = @_;
 
     my $db = $self->db;
 
-    my @objs = map { $self->deserialize( $db->get( $_ ) ) } @ids;
-    @objs;
+    my $entries = $self->db->get_multi( @ids );
+
+	my @objs;
+
+	foreach my $id ( @ids ) {
+		return unless exists $entries->{$id};
+	}
+
+	return map { $self->deserialize($_) } @{ $entries }{@ids};
 }
 
-sub commit_entries {
+sub insert {
     my ( $self, @entries ) = @_;
+
     my $db = $self->db;
-    my @checks = $self->exists( map { $_->id } @entries );
 
     foreach my $entry ( @entries ) {
         my $id = $entry->id;
 
-        my $status = shift @checks;
         if ( $entry->deleted ) {
-            if ( !$status ) {
-                croak "Entry $id doesn't exist in the database";
-            }
             $db->delete( $id );
         } else {
-            if ( $status and not $entry->has_prev ) {
-                croak "Entry $id already exists in the database";
-            }
-            $db->set( $id, $self->serialize( $entry ) );
+			my $method = $entry->has_prev ? "replace" : "add";
+			die "error in $method $id" unless $db->$method( $id => $self->serialize($entry) );
         }
     }
 }
@@ -92,6 +78,10 @@ sub delete {
     my ($self, @ids_or_entries) = @_;
     my @ids = map { ref($_) ? $_->id : $_ } @ids_or_entries;
     $self->db->delete($_) foreach (@ids);
+}
+
+sub clear {
+	shift->db->flush_all;
 }
 
 __PACKAGE__->meta->make_immutable;
